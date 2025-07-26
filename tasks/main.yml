@@ -1,0 +1,133 @@
+---
+# tasks file for nginx
+
+- name: apt update_cache
+  apt:
+    update_cache: true
+
+- name: nginx and certbot install
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - certbot
+    - openssl
+
+- name: not default nginx configurating
+  when: not (nginx_default | default(true))
+  block:
+    - name: default config deleting
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/etc/nginx/sites-enabled/default"
+        - "/etc/nginx/sites-available/default"
+
+    - name: nginx http configs copying
+      template:
+        src: "{{ item.nginx_conf }}"
+        dest: "/etc/nginx/sites-available/{{ item.name }}"
+      loop: "{{ nginx_vhosts }}"
+      vars: 
+        http_conf: true
+      when: item.nginx_conf is defined
+      
+    - name: html dirs creating
+      file:
+        path: "/var/www/{{ item.name }}"
+        state: directory
+        recurse: true
+      loop: "{{ nginx_vhosts }}"
+      when: item.name is defined
+      
+    - name: html confs copying
+      copy:
+        src: "{{ item.html_conf }}"
+        dest: "/var/www/{{ item.name }}/home.html"
+      loop: "{{ nginx_vhosts }}"
+      when: 
+        - item.name is defined
+        - item.html_conf is defined
+      
+    - name: http activation
+      file:
+        src: "/etc/nginx/sites-available/{{ item.name }}"
+        dest: "/etc/nginx/sites-enabled/{{ item.name }}"
+        state: link
+      register: activation_results
+      loop: "{{ nginx_vhosts }}"
+      when: 
+        - item.name is defined
+        - item.nginx_conf is defined
+    
+    - name: nginx_reload
+      service:
+        name: nginx
+        state: reloaded
+      when: activation_results.changed
+      
+    - name: SSL updating
+      command: certbot renew --quiet
+      notify: Nginx_reload
+      loop: "{{ nginx_vhosts }}"
+      when: (item.le_cert_renewal | default(false))
+      
+    - name: LE cert check and receiving
+      block:
+        - name: check if LE cert exists
+          stat:
+            path: "/etc/letsencrypt/live/{{ item.name }}/fullchain.pem"
+          register: le_cert_exist
+          loop: "{{ nginx_vhosts }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: recieve LE cert
+          command: certbot certonly --webroot -w /var/www/{{ item.name }} -d {{ item.name }} -n --agree-tos --email test@test.ru
+          when:
+            - not le_cert_exist.results[item_index].stat.exists
+            - item.cert_type == "LE"
+          loop: "{{ nginx_vhosts }}"
+          loop_control:
+            index_var: item_index
+            label: "{{ item.name }}"
+
+      
+    - name: CS cert check and recieving
+      block:
+        - name: check if CS cert exists
+          stat:
+            path: "/etc/ssl/certs/{{ item.name }}.crt"
+          register: cs_cert_exist
+          loop: "{{ nginx_vhosts }}"
+          loop_control:
+            label: "{{item.name}}"
+
+        - name: recieve CS cert
+          command: openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/{{ item.name }}.key -out /etc/ssl/certs/{{ item.name }}.crt -subj "/CN={{ item.name }}"
+          when: 
+            - not cs_cert_exist.results[item_index].stat.exists 
+            - item.cert_type == "CS"
+          loop: "{{ nginx_vhosts }}"
+          loop_control:
+            index_var: item_index
+            label: "{{ item.name }}"
+          
+    - name: nginx https configs copying
+      template:
+        src: "{{ item.nginx_conf }}"
+        dest: "/etc/nginx/sites-available/{{ item.name }}"
+      loop: "{{ nginx_vhosts }}"
+      notify: Nginx_reload
+      when: item.nginx_conf is defined
+      
+    - name: https activation
+      file:
+        src: "/etc/nginx/sites-available/{{ item.name }}"
+        dest: "/etc/nginx/sites-enabled/{{ item.name }}"
+        state: link
+      loop: "{{ nginx_vhosts }}"
+      notify: Nginx_reload
+      when: item.nginx_conf is defined
