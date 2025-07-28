@@ -2,7 +2,7 @@ server{
 {% if http_conf is defined %}
         listen 80;
 {% else %}
-        listen 443;
+        listen 443 ssl;
 {% endif %}
 
         server_name {{ item.name }};
