@@ -1,21 +1,21 @@
 server{
-{% if http_conf is defined %}
+{% if nginx_http_conf is defined %}
         listen 80;
 {% else %}
         listen 443 ssl;
 {% endif %}
 
-        server_name {{ item.name }};
+        server_name {{ item.nginx_name }};
 
-{% if item.cert_type == 'LE' and http_conf is not defined %}
-        ssl_certificate /etc/letsencrypt/live/{{ item.name }}/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/{{ item.name }}/privkey.pem;
-{% elif item.cert_type == 'CS' and http_conf is not defined %}
-        ssl_certificate /etc/ssl/certs/{{ item.name }}.crt;
-        ssl_certificate_key /etc/ssl/private/{{ item.name }}.key;
+{% if item.nginx_cert_type == 'LE' and nginx_http_conf is not defined %}
+        ssl_certificate /etc/letsencrypt/live/{{ item.nginx_name }}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/{{ item.nginx_name }}/privkey.pem;
+{% elif item.nginx_cert_type == 'CS' and nginx_http_conf is not defined %}
+        ssl_certificate /etc/ssl/certs/{{ item.nginx_name }}.crt;
+        ssl_certificate_key /etc/ssl/private/{{ item.nginx_name }}.key;
 {% endif %}
 
-        root /var/www/{{ item.name }};
+        root /var/www/{{ item.nginx_name }};
         index home.html;
         access_log /var/log/nginx/devops_access.log;
         error_log /var/log/nginx/devops_error.log;
@@ -23,10 +23,10 @@ server{
                 try_files $uri $uri.html $uri/ =404;
         }
 }
-{% if item.cert_type in ['CS', 'LE'] and http_conf is not defined %}
+{% if item.nginx_cert_type in ['CS', 'LE'] and nginx_http_conf is not defined %}
 server {
         listen 80;
-        server_name {{ item.name }};
-        return 301 https://{{ item.name }};
+        server_name {{ item.nginx_name }};
+        return 301 https://{{ item.nginx_name }};
 }
 {% endif %}
